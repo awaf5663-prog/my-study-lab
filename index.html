@@ -62,22 +62,44 @@ function render(){
  $("v").innerHTML=(busy?`<div class="msg">⏳ ${esc(busy)}…</div>`:"")+(msg?`<div class="msg">${esc(msg)}</div>`:"")+({home,courses,learn,exam,lab,codes,prog,plan})[tab]();
  if(tab==="exam"&&E&&!E.res){clearInterval(tm);tm=setInterval(()=>{const e=$("tmr");if(!e||!E||E.res){clearInterval(tm);return}const s=Math.max(0,E.d*60-Math.floor((Date.now()-E.s)/1000));e.textContent=Math.floor(s/60)+":"+String(s%60).padStart(2,"0")},1000)}}
 function card(n){const d=[0,1,2,3,4].map(i=>`<i class="${n.done&&i<=n.box?"on":""}"></i>`).join("");return `<div class="card" onclick="openN('${n.id}')"><b>${esc(n.t)}</b><span class="tag">${esc(n.m)}</span><div class="dots">${d}</div></div>`}
-function home(){const now=Date.now(),due=D.N.filter(n=>n.done&&n.due<=now),wip=D.N.filter(n=>!n.done),ok=D.N.filter(n=>n.done&&n.box>=3).length;
+function home0(){const now=Date.now(),due=D.N.filter(n=>n.done&&n.due<=now),wip=D.N.filter(n=>!n.done),ok=D.N.filter(n=>n.done&&n.box>=3).length;
  return `<h1>My Study Lab</h1><p class="sub">Visualiser · Comprendre · Restituer</p><div class="grid"><div class="st"><b>${D.C.length}</b>cours</div><div class="st"><b>${D.N.length}</b>notions</div><div class="st"><b>${ok}</b>ancrées</div><div class="st"><b>${due.length}</b>à restituer</div></div>`+
  (D.N.length?`<h2>À restituer aujourd’hui</h2>${due.map(card).join("")||'<div class="empty">Rien d’urgent.</div>'}${wip.length?`<h2>En cours (V → C → R)</h2>${wip.map(card).join("")}`:""}`:`<div class="empty">Commence par importer un cours.<br><br><button class="btn" onclick="go('courses')">Importer un cours</button></div>`)}
 function courses(){
  if(oc){const c=gC(oc),ns=D.N.filter(n=>n.cid===c.id);
   return `<button class="back" onclick="oc=null;render()">← Cours</button><h1>${esc(c.t)}</h1><span class="tag">${esc(c.m)}</span><span class="tag">${esc(c.sem)} · ${esc(c.chap)}</span><p class="sub">${c.txt.length} caractères importés</p><button class="btn" onclick="extract('${c.id}')">Extraire les notions avec l’IA</button><button class="btn alt" onclick="chkFrom('${c.id}')">Vérifier la conformité aux codes</button><h2>Notions (${ns.length})</h2>${ns.map(card).join("")||'<div class="empty">Aucune notion extraite.</div>'}<h2>Texte</h2><div class="pre">${esc(c.txt.slice(0,2500))}${c.txt.length>2500?"…":""}</div><button class="btn alt" onclick="delC('${c.id}')">Supprimer ce cours</button>`}
  return `<h1>Mes cours</h1>`+D.C.map(c=>`<div class="card" onclick="oc='${c.id}';render()"><b>${esc(c.t)}</b><span class="tag">${esc(c.m)}</span><span class="tag">${esc(c.sem)} · ${esc(c.chap)}</span></div>`).join("")+
- `<h2>Importer un cours</h2><input id="ct" placeholder="Titre du cours"><input id="cm" list="ml" placeholder="Matière"><datalist id="ml">${MAT.map(m=>`<option>${m}</option>`).join("")}</datalist><input id="cs" placeholder="Semestre (ex. S5)"><input id="cc" placeholder="Chapitre"><label>Fichier texte (.txt, .md) ou texte collé</label><input type="file" id="cf" accept=".txt,.md" onchange="readF(this)"><textarea id="cx" placeholder="Colle ici ton cours (articles de loi, références…)"></textarea><button class="btn" onclick="addC()">Enregistrer le cours</button><p class="sub">PDF, Word, PowerPoint : copie le texte pour l’instant.</p>`}
-function readF(i){const f=i.files[0];if(!f)return;const r=new FileReader();r.onload=()=>{$("cx").value=r.result;if(!$("ct").value)$("ct").value=f.name.replace(/\.\w+$/,"")};r.readAsText(f)}
+ `<h2>Importer un cours</h2><input id="ct" placeholder="Titre du cours"><input id="cm" list="ml" placeholder="Matière"><datalist id="ml">${MAT.map(m=>`<option>${m}</option>`).join("")}</datalist><input id="cs" placeholder="Semestre (ex. S5)"><input id="cc" placeholder="Chapitre"><label>Fichiers (PDF, Word, PowerPoint, texte) ou texte collé</label><input type="file" id="cf" accept=".pdf,.docx,.pptx,.txt,.md" multiple onchange="readF(this)"><div class="sub" id="fst"></div><textarea id="cx" placeholder="Colle ici ton cours (articles de loi, références…)"></textarea><button class="btn" onclick="addC()">Enregistrer le cours</button><p class="sub">PDF avec texte sélectionnable, Word (.docx) et PowerPoint (.pptx). Les PDF scannés (images) ne sont pas lus. Pour un long cours, importe-le par chapitres.</p>`}
+const LIB={pdf:"https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js",wk:"https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js",zip:"https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"};
+const ld=u=>new Promise((ok,ko)=>{const e=document.createElement("script");e.src=u;e.onload=ok;e.onerror=()=>ko(new Error("bibliothèque non chargée (connexion ?)"));document.head.appendChild(e)});
+async function fileText(f){const n=f.name.toLowerCase();
+ if(/\.(txt|md|csv)$/.test(n))return await f.text();
+ if(n.endsWith(".pdf")){if(!window.pdfjsLib){await ld(LIB.pdf);pdfjsLib.GlobalWorkerOptions.workerSrc=LIB.wk}
+  const d=await pdfjsLib.getDocument({data:await f.arrayBuffer()}).promise;let o="";
+  for(let p=1;p<=d.numPages;p++){const c=await(await d.getPage(p)).getTextContent();o+="\n[Page "+p+"]\n"+c.items.map(i=>i.str+(i.hasEOL?"\n":" ")).join("")}
+  return o}
+ if(/\.(docx|pptx)$/.test(n)){if(!window.JSZip)await ld(LIB.zip);
+  const z=await JSZip.loadAsync(await f.arrayBuffer()),P=new DOMParser();
+  const tx=async(nm,pt,tt)=>{const x=P.parseFromString(await z.file(nm).async("string"),"application/xml");return [...x.getElementsByTagName(pt)].map(e=>[...e.getElementsByTagName(tt)].map(y=>y.textContent).join("")).join("\n")};
+  if(n.endsWith(".docx"))return await tx("word/document.xml","w:p","w:t");
+  const sl=Object.keys(z.files).filter(k=>/^ppt\/slides\/slide\d+\.xml$/.test(k)).sort((a,b)=>a.match(/\d+/)[0]-b.match(/\d+/)[0]);let o="";
+  for(const k of sl)o+="\n[Diapositive "+k.match(/\d+/)[0]+"]\n"+await tx(k,"a:p","a:t");return o}
+ throw new Error("format non pris en charge ("+f.name+") : utilise PDF, DOCX, PPTX, TXT ou MD")}
+async function readF(i){const fs=[...i.files],st=$("fst");if(!fs.length)return;let o="";
+ try{for(const f of fs){st.textContent="Lecture de "+f.name+"…";o+=(fs.length>1?"\n=== "+f.name+" ===\n":"")+await fileText(f)}
+  o=o.replace(/[ \t]+\n/g,"\n").replace(/\n{3,}/g,"\n\n").trim();
+  if(o.replace(/\[(Page|Diapositive) \d+\]/g,"").trim().length<30){st.textContent="Aucun texte lisible (PDF scanné ?). Utilise un PDF avec texte sélectionnable.";return}
+  $("cx").value=o;if(!$("ct").value)$("ct").value=fs[0].name.replace(/\.\w+$/,"");st.textContent="✓ "+fs.length+" fichier(s) lu(s), "+Math.round(o.length/1000)+" k caractères."}
+ catch(e){st.textContent="Erreur : "+e.message}}
 function addC(){const c={id:uid(),t:$("ct").value.trim(),m:$("cm").value.trim()||"Autre",sem:$("cs").value.trim()||"—",chap:$("cc").value.trim()||"—",txt:$("cx").value.trim()};
- if(!c.t||c.txt.length<30){msg="Titre et texte (30 caractères minimum) requis.";render();return}D.C.unshift(c);sv();oc=c.id;msg="";render()}
+ if(!c.t||c.txt.length<30){msg="Titre et texte (30 caractères minimum) requis.";render();return}D.C.unshift(c);try{localStorage.setItem(K,JSON.stringify(D))}catch(e){D.C.shift();msg="Stockage plein : importe le cours par chapitres.";render();return}oc=c.id;msg="";render()}
 function delC(id){D.C=D.C.filter(c=>c.id!==id);sv();oc=null;render()}
 function extract(id){const c=gC(id);run("Extraction des notions",async()=>{
- const r=await ai(`${RULES}\nExtrais du cours ci-dessous 4 à 8 notions essentielles. Réponds uniquement en JSON : [{"t":"titre","el":["3 à 7 éléments clés dans l’ordre logique"],"ref":"articles ou sources cités dans le cours, sinon vide"}].\nMatière : ${c.m}\nCOURS :\n${c.txt.slice(0,12000)}`,true);
- (Array.isArray(r)?r:[]).forEach(x=>{if(x.t&&x.el&&x.el.length>1)D.N.unshift({id:uid(),cid:c.id,t:x.t,m:c.m,el:x.el.map(String),ref:x.ref||"",ex:"",box:0,done:false,due:0,h:[]})});
- sv();msg="Notions extraites. Vérifie-les avant de les apprendre."})}
+ const ch=[];for(let i=0;i<c.txt.length&&ch.length<5;i+=10000)ch.push(c.txt.slice(i,i+10000));let n=0;
+ for(let k=0;k<ch.length;k++){busy="Extraction des notions (partie "+(k+1)+"/"+ch.length+")";render();
+  const r=await ai(`${RULES}\nExtrais de cet extrait de cours 3 à 6 notions essentielles. Réponds uniquement en JSON : [{"t":"titre","el":["3 à 7 éléments clés dans l’ordre logique"],"ref":"articles ou sources cités dans le cours, sinon vide"}].\nMatière : ${c.m}\nEXTRAIT ${k+1}/${ch.length} :\n${ch[k]}`,true);
+  (Array.isArray(r)?r:[]).forEach(x=>{if(x.t&&x.el&&x.el.length>1){D.N.unshift({id:uid(),cid:c.id,t:x.t,m:c.m,el:x.el.map(String),ref:x.ref||"",ex:"",box:0,done:false,due:0,h:[]});n++}});sv()}
+ msg=n+" notions extraites"+(c.txt.length>50000?" (50 000 premiers caractères traités)":"")+". Vérifie-les avant de les apprendre."})}
 function learn(){
  if(open)return detail(gN(open));
  return `<h1>Apprendre</h1>`+(D.N.length?[...new Set(D.N.map(n=>n.m))].map(m=>`<h2>${esc(m)}</h2>${D.N.filter(n=>n.m===m).map(card).join("")}`).join(""):'<div class="empty">Importe un cours ou crée une notion.</div>')+
@@ -184,8 +206,8 @@ function codes(){const t=[["lib","Bibliothèque"],["check","Vérifier"]];
 function vLib(){
  return (L().map(c=>`<div class="card" style="cursor:default"><b>${esc(c.t)}</b><span class="tag">${esc(c.j)}</span><span class="tag">${esc(c.v||"version non précisée")}</span><span class="sub">${Math.round(c.txt.length/1000)} k caractères · ${arts(c).length} articles repérés</span><button class="btn alt" onclick="delL('${c.id}')">Supprimer</button></div>`).join("")||'<div class="empty">Ta bibliothèque est vide. Ajoute ton premier code.</div>')+
  (L().length?`<h2>Chercher</h2><input id="qs" placeholder="N° d’article ou mots-clés"><button class="btn alt" onclick="qsearch()">Chercher</button>${(QR||[]).map(h=>`<div class="card" style="cursor:default"><b>${esc(h.c.t)} · art. ${esc(h.a.id)}</b><div class="pre">${esc(h.a.txt.slice(0,700))}</div></div>`).join("")}`:"")+
- `<h2>Ajouter un code</h2><input id="lt" placeholder="Ex. : Code du travail du Sénégal"><input id="lj" list="jl" placeholder="Juridiction"><datalist id="jl"><option>Sénégal</option><option>OHADA</option><option>France</option><option>International</option><option>Autre</option></datalist><input id="lv" placeholder="Version ou date (ex. 2023)"><label>Fichier .txt ou .md, ou texte collé</label><input type="file" accept=".txt,.md" onchange="readL(this)"><textarea id="lx" placeholder="Colle le texte du code (« Article … » au début de chaque article)"></textarea><button class="btn" onclick="addL()">Enregistrer</button><p class="sub">Les textes restent dans ton navigateur (environ 5 Mo au total). Pour un gros code, ajoute-le par livre ou par titre.</p>`}
-function readL(i){const f=i.files[0];if(!f)return;const r=new FileReader();r.onload=()=>{$("lx").value=r.result;if(!$("lt").value)$("lt").value=f.name.replace(/\.\w+$/,"")};r.readAsText(f)}
+ `<h2>Ajouter un code</h2><input id="lt" placeholder="Ex. : Code du travail du Sénégal"><input id="lj" list="jl" placeholder="Juridiction"><datalist id="jl"><option>Sénégal</option><option>OHADA</option><option>France</option><option>International</option><option>Autre</option></datalist><input id="lv" placeholder="Version ou date (ex. 2023)"><label>Fichier (.pdf, .docx, .txt, .md) ou texte collé</label><input type="file" accept=".pdf,.docx,.txt,.md" onchange="readL(this)"><textarea id="lx" placeholder="Colle le texte du code (« Article … » au début de chaque article)"></textarea><button class="btn" onclick="addL()">Enregistrer</button><p class="sub">Les textes restent dans ton navigateur (environ 5 Mo au total). Pour un gros code, ajoute-le par livre ou par titre.</p>`}
+async function readL(i){const f=i.files[0];if(!f)return;try{$("lx").value=await fileText(f);if(!$("lt").value)$("lt").value=f.name.replace(/\.\w+$/,"")}catch(e){msg="Erreur : "+e.message;render()}}
 function addL(){const c={id:uid(),t:$("lt").value.trim(),j:$("lj").value.trim()||"Autre",v:$("lv").value.trim(),txt:$("lx").value.trim()};
  if(!c.t||c.txt.length<100){msg="Titre et texte (100 caractères minimum) requis.";render();return}
  L().unshift(c);try{localStorage.setItem(K,JSON.stringify(D))}catch(e){L().shift();msg="Stockage plein : ajoute le code par livre ou par titre.";render();return}msg="";render()}
@@ -206,6 +228,16 @@ function verif(){const v=$("ks").value,codes=L().filter(c=>$("k"+c.id)&&$("k"+c.
    return `AFFIRMATION ${i+1} : ${x.c}\nPASSAGES :\n`+(ps.slice(0,3).map(p=>`[${p.c.t} · ${p.c.v||"version non précisée"} · art. ${p.a.id}] ${p.a.txt.slice(0,900)}`).join("\n")||"(aucun passage trouvé dans le recueil)")}).join("\n\n");
   const r=await ai(`${RULES}\nTu vérifies la conformité d’affirmations juridiques UNIQUEMENT à partir des passages du recueil fournis. Si aucun passage ne permet de trancher, le verdict est "non vérifiable" : n’invente jamais un article ni son contenu. Exacte : "conforme". Contredit ou déformé : "divergent". JSON : [{"i":numéro,"v":"conforme" ou "divergent" ou "non vérifiable","art":"référence citée dans les passages, sinon vide","e":"explication courte avec un extrait de moins de 20 mots"}].\n${ctx}`,true);
   CK=items.map((x,i)=>{const y=(Array.isArray(r)?r:[]).find(z=>+z.i===i+1)||{};return{c:x.c,v:["conforme","divergent"].includes(y.v)?y.v:"non vérifiable",art:y.art||"",e:y.e||"Aucun passage exploitable."}})})}
+
+function home(){return home0()+`<h2>Sauvegarde</h2><div class="card" style="cursor:default"><span class="sub">Tes données sont enregistrées dans ce navigateur seulement. Exporte-les pour les garder en sécurité ou les ouvrir sur un autre appareil.</span><button class="btn alt" onclick="expo()">Exporter ma sauvegarde</button><label>Importer une sauvegarde (fusion sans doublons)</label><input type="file" accept=".json" onchange="impo(this)"></div>`}
+function expo(){const b=new Blob([JSON.stringify(D)],{type:"application/json"}),a=document.createElement("a");a.href=URL.createObjectURL(b);a.download="my-study-lab-"+new Date().toISOString().slice(0,10)+".json";document.body.appendChild(a);a.click();a.remove();msg="Sauvegarde exportée dans tes téléchargements.";render()}
+async function impo(i){const f=i.files[0];if(!f)return;
+ try{const o=JSON.parse(await f.text());if(!o||!Array.isArray(o.N)||!Array.isArray(o.C))throw new Error("fichier de sauvegarde invalide");
+  const mg=(a,b)=>{const ids=new Set(a.map(x=>x.id));return a.concat(b.filter(x=>!ids.has(x.id)))};
+  D.C=mg(D.C,o.C);D.N=mg(D.N,o.N);D.L=mg(L(),o.L||[]);D.R=mg(D.R||[],o.R||[]);D.X=D.X.concat((o.X||[]).filter(x=>!D.X.some(y=>y.d===x.d)));D.P=Object.assign({},o.P||{},D.P);
+  try{localStorage.setItem(K,JSON.stringify(D))}catch(e){throw new Error("stockage plein")}
+  msg="Sauvegarde importée : "+o.C.length+" cours, "+o.N.length+" notions lus.";render()}
+ catch(e){msg="Erreur : "+e.message;render()}}
 
 render();
 </script>
